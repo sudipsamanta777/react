@@ -81,13 +81,14 @@ function getTestFlags() {
       fb: www || xplat,
 
       // These aren't flags, just a useful aliases for tests.
-      enableActivity: releaseChannel === 'experimental' || www || xplat,
+      // TODO: Clean this up.
+      enableActivity: true,
       enableSuspenseList: releaseChannel === 'experimental' || www || xplat,
       enableLegacyHidden: www,
       // TODO: Suspending the work loop during the render phase is currently
       // not compatible with sibling prerendering. We will add this optimization
       // back in a later step.
-      enableSuspendingDuringWorkLoop: !featureFlags.enableSiblingPrerendering,
+      enableSuspendingDuringWorkLoop: false,
 
       // This flag is used to determine whether we should run Fizz tests using
       // the external runtime or the inline script runtime.

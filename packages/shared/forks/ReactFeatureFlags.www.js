@@ -16,29 +16,26 @@ const dynamicFeatureFlags: DynamicFeatureFlags = require('ReactFeatureFlags');
 
 export const {
   alwaysThrottleRetries,
-  disableDefaultPropsExceptForClasses,
   disableLegacyContextForFunctionComponents,
   disableSchedulerTimeoutInWorkLoop,
-  enableDO_NOT_USE_disableStrictPassiveEffect,
   enableHiddenSubtreeInsertionEffectCleanup,
   enableInfiniteRenderLoopDetection,
   enableNoCloningMemoCache,
   enableObjectFiber,
-  enableRenderableContext,
   enableRetryLaneExpiration,
-  enableSiblingPrerendering,
   enableTransitionTracing,
   enableTrustedTypesIntegration,
-  enableUseEffectCRUDOverload,
-  favorSafetyOverHydrationPerf,
   renameElementSymbol,
   retryLaneExpirationMs,
   syncLaneExpirationMs,
   transitionLaneExpirationMs,
-  enableOwnerStacks,
-  enableRemoveConsolePatches,
-  enableFastAddPropertiesInDiffing,
   enableViewTransition,
+  enableComponentPerformanceTrack,
+  enableScrollEndPolyfill,
+  enableFragmentRefs,
+  enableFragmentRefsScrollIntoView,
+  enableAsyncDebugInfo,
+  enableInternalInstanceMap,
 } = dynamicFeatureFlags;
 
 // On WWW, __EXPERIMENTAL__ is used for a new modern build.
@@ -49,21 +46,21 @@ export const enableProfilerCommitHooks = __PROFILE__;
 export const enableProfilerNestedUpdatePhase = __PROFILE__;
 export const enableUpdaterTracking = __PROFILE__;
 
-export const enableSuspenseAvoidThisFallback = true;
+export const enableSuspenseAvoidThisFallback: boolean = true;
 
-export const enableCPUSuspense = true;
-export const enableUseEffectEventHook = true;
-export const enableMoveBefore = false;
-export const disableInputAttributeSyncing = false;
-export const enableLegacyFBSupport = true;
+export const enableCPUSuspense: boolean = true;
+export const enableUseEffectEventHook: boolean = true;
+export const enableMoveBefore: boolean = false;
+export const disableInputAttributeSyncing: boolean = false;
+export const enableLegacyFBSupport: boolean = true;
 
-export const enableYieldingBeforePassive = false;
+export const enableYieldingBeforePassive: boolean = false;
 
-export const enableThrottledScheduling = false;
+export const enableThrottledScheduling: boolean = false;
 
-export const enableHydrationLaneScheduling = true;
+export const enableHydrationLaneScheduling: boolean = true;
 
-export const enableComponentPerformanceTrack = false;
+export const enablePerformanceIssueReporting: boolean = false;
 
 // Logs additional User Timing API marks for use with an experimental profiling tool.
 export const enableSchedulingProfiler: boolean =
@@ -71,48 +68,51 @@ export const enableSchedulingProfiler: boolean =
 
 export const disableLegacyContext = __EXPERIMENTAL__;
 
-export const enableLegacyCache = true;
+export const enableLegacyCache: boolean = true;
 
-export const enableAsyncIterableChildren = false;
+export const enableAsyncIterableChildren: boolean = false;
 
-export const enableTaint = false;
+export const enableTaint: boolean = false;
 
-export const enablePostpone = false;
-
-export const enableHalt = false;
+export const enableHalt: boolean = true;
 
 // TODO: www currently relies on this feature. It's disabled in open source.
 // Need to remove it.
-export const disableCommentsAsDOMContainers = false;
+export const disableCommentsAsDOMContainers: boolean = false;
 
-export const enableCreateEventHandleAPI = true;
+export const enableCreateEventHandleAPI: boolean = true;
 
-export const enableScopeAPI = true;
+export const enableScopeAPI: boolean = true;
 
-export const enableSuspenseCallback = true;
+export const enableSuspenseCallback: boolean = true;
 
-export const enableLegacyHidden = true;
+export const enableLegacyHidden: boolean = true;
 
 export const disableTextareaChildren = __EXPERIMENTAL__;
 
-export const enableFizzExternalRuntime = true;
+export const enableFizzExternalRuntime: boolean = true;
 
-export const passChildrenWhenCloningPersistedNodes = false;
+export const passChildrenWhenCloningPersistedNodes: boolean = false;
 
-export const enablePersistedModeClonedFlag = false;
+export const disableClientCache: boolean = true;
 
-export const enableAsyncDebugInfo = false;
-export const disableClientCache = true;
+export const enableReactTestRendererWarning: boolean = false;
 
-export const enableReactTestRendererWarning = false;
+export const disableLegacyMode: boolean = true;
 
-export const disableLegacyMode = true;
+export const enableEagerAlternateStateNodeCleanup: boolean = true;
 
-export const enableShallowPropDiffing = false;
+export const enableGestureTransition: boolean = false;
 
-export const enableLazyPublicInstanceInFabric = false;
+export const enableSuspenseyImages: boolean = false;
+export const enableFizzBlockingRender: boolean = true;
+export const enableSrcObject: boolean = false;
+export const enableHydrationChangeEvent: boolean = false;
+export const enableDefaultTransitionIndicator: boolean = true;
 
-export const enableSwipeTransition = false;
+export const ownerStackLimit = 1e4;
+
+export const enableFragmentRefsInstanceHandles: boolean = true;
 
 // Flow magic to verify the exports of this file match the original version.
 ((((null: any): ExportsType): FeatureFlagsType): ExportsType);

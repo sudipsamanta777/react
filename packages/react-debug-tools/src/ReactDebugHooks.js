@@ -6,7 +6,7 @@
  *
  * @flow
  */
-
+import type {StackFrame as ParsedStackFrame} from 'error-stack-parser';
 import type {
   Awaited,
   ReactContext,
@@ -14,7 +14,6 @@ import type {
   Usable,
   Thenable,
   ReactDebugInfo,
-  StartGesture,
 } from 'shared/ReactTypes';
 import type {
   ContextDependency,
@@ -132,9 +131,6 @@ function getPrimitiveStackCache(): Map<string, Array<any>> {
       if (typeof Dispatcher.useEffectEvent === 'function') {
         Dispatcher.useEffectEvent((args: empty) => {});
       }
-      if (typeof Dispatcher.useSwipeTransition === 'function') {
-        Dispatcher.useSwipeTransition(null, null, null);
-      }
     } finally {
       readHookLog = hookLog;
       hookLog = [];
@@ -151,6 +147,8 @@ function getPrimitiveStackCache(): Map<string, Array<any>> {
 let currentFiber: null | Fiber = null;
 let currentHook: null | Hook = null;
 let currentContextDependency: null | ContextDependency<mixed> = null;
+let currentThenableIndex: number = 0;
+let currentThenableState: null | Array<Thenable<mixed>> = null;
 
 function nextHook(): null | Hook {
   const hook = currentHook;
@@ -205,7 +203,15 @@ function use<T>(usable: Usable<T>): T {
   if (usable !== null && typeof usable === 'object') {
     // $FlowFixMe[method-unbinding]
     if (typeof usable.then === 'function') {
-      const thenable: Thenable<any> = (usable: any);
+      const thenable: Thenable<any> =
+        // If we have thenable state, then the actually used thenable will be the one
+        // stashed in it. It's possible for uncached Promises to be new each render
+        // and in that case the one we're inspecting is the in the thenable state.
+        currentThenableState !== null &&
+        currentThenableIndex < currentThenableState.length
+          ? currentThenableState[currentThenableIndex++]
+          : (usable: any);
+
       switch (thenable.status) {
         case 'fulfilled': {
           const fulfilledValue: T = thenable.value;
@@ -374,11 +380,8 @@ function useInsertionEffect(
 }
 
 function useEffect(
-  create: (() => (() => void) | void) | (() => {...} | void | null),
-  createDeps: Array<mixed> | void | null,
-  update?: ((resource: {...} | void | null) => void) | void,
-  updateDeps?: Array<mixed> | void | null,
-  destroy?: ((resource: {...} | void | null) => void) | void,
+  create: () => (() => void) | void,
+  deps: Array<mixed> | void | null,
 ): void {
   nextHook();
   hookLog.push({
@@ -756,23 +759,6 @@ function useEffectEvent<Args, F: (...Array<Args>) => mixed>(callback: F): F {
   return callback;
 }
 
-function useSwipeTransition<T>(
-  previous: T,
-  current: T,
-  next: T,
-): [T, StartGesture] {
-  nextHook();
-  hookLog.push({
-    displayName: null,
-    primitive: 'SwipeTransition',
-    stackError: new Error(),
-    value: current,
-    debugInfo: null,
-    dispatcherHookName: 'SwipeTransition',
-  });
-  return [current, () => () => {}];
-}
-
 const Dispatcher: DispatcherType = {
   readContext,
 
@@ -799,12 +785,11 @@ const Dispatcher: DispatcherType = {
   useMemoCache,
   useCacheRefresh,
   useEffectEvent,
-  useSwipeTransition,
 };
 
 // create a proxy to throw a custom error
 // in case future versions of React adds more hooks
-const DispatcherProxyHandler = {
+const DispatcherProxyHandler: Proxy$traps<DispatcherType> = {
   get(target: DispatcherType, prop: string) {
     if (target.hasOwnProperty(prop)) {
       // $FlowFixMe[invalid-computed-prop]
@@ -859,7 +844,11 @@ export type HooksTree = Array<HooksNode>;
 
 let mostLikelyAncestorIndex = 0;
 
-function findSharedIndex(hookStack: any, rootStack: any, rootIndex: number) {
+function findSharedIndex(
+  hookStack: ParsedStackFrame[],
+  rootStack: ParsedStackFrame[],
+  rootIndex: number,
+) {
   const source = rootStack[rootIndex].source;
   hookSearch: for (let i = 0; i < hookStack.length; i++) {
     if (hookStack[i].source === source) {
@@ -880,7 +869,10 @@ function findSharedIndex(hookStack: any, rootStack: any, rootIndex: number) {
   return -1;
 }
 
-function findCommonAncestorIndex(rootStack: any, hookStack: any) {
+function findCommonAncestorIndex(
+  rootStack: ParsedStackFrame[],
+  hookStack: ParsedStackFrame[],
+) {
   let rootIndex = findSharedIndex(
     hookStack,
     rootStack,
@@ -901,7 +893,7 @@ function findCommonAncestorIndex(rootStack: any, hookStack: any) {
   return -1;
 }
 
-function isReactWrapper(functionName: any, wrapperName: string) {
+function isReactWrapper(functionName: void | string, wrapperName: string) {
   const hookName = parseHookName(functionName);
   if (wrapperName === 'HostTransitionStatus') {
     return hookName === wrapperName || hookName === 'FormStatus';
@@ -910,7 +902,7 @@ function isReactWrapper(functionName: any, wrapperName: string) {
   return hookName === wrapperName;
 }
 
-function findPrimitiveIndex(hookStack: any, hook: HookLogEntry) {
+function findPrimitiveIndex(hookStack: ParsedStackFrame[], hook: HookLogEntry) {
   const stackCache = getPrimitiveStackCache();
   const primitiveStack = stackCache.get(hook.primitive);
   if (primitiveStack === undefined) {
@@ -941,7 +933,7 @@ function findPrimitiveIndex(hookStack: any, hook: HookLogEntry) {
   return -1;
 }
 
-function parseTrimmedStack(rootStack: any, hook: HookLogEntry) {
+function parseTrimmedStack(rootStack: ParsedStackFrame[], hook: HookLogEntry) {
   // Get the stack trace between the primitive hook function and
   // the root function call. I.e. the stack frames of custom hooks.
   const hookStack = ErrorStackParser.parse(hook.stackError);
@@ -1002,7 +994,7 @@ function parseHookName(functionName: void | string): string {
 }
 
 function buildTree(
-  rootStack: any,
+  rootStack: ParsedStackFrame[],
   readHookLog: Array<HookLogEntry>,
 ): HooksTree {
   const rootChildren: Array<HooksNode> = [];
@@ -1059,10 +1051,20 @@ function buildTree(
           subHooks: children,
           debugInfo: null,
           hookSource: {
-            lineNumber: stackFrame.lineNumber,
-            columnNumber: stackFrame.columnNumber,
-            functionName: stackFrame.functionName,
-            fileName: stackFrame.fileName,
+            lineNumber:
+              stackFrame.lineNumber === undefined
+                ? null
+                : stackFrame.lineNumber,
+            columnNumber:
+              stackFrame.columnNumber === undefined
+                ? null
+                : stackFrame.columnNumber,
+            functionName:
+              stackFrame.functionName === undefined
+                ? null
+                : stackFrame.functionName,
+            fileName:
+              stackFrame.fileName === undefined ? null : stackFrame.fileName,
           },
         };
 
@@ -1107,10 +1109,14 @@ function buildTree(
     };
     if (stack && stack.length >= 1) {
       const stackFrame = stack[0];
-      hookSource.lineNumber = stackFrame.lineNumber;
-      hookSource.functionName = stackFrame.functionName;
-      hookSource.fileName = stackFrame.fileName;
-      hookSource.columnNumber = stackFrame.columnNumber;
+      hookSource.lineNumber =
+        stackFrame.lineNumber === undefined ? null : stackFrame.lineNumber;
+      hookSource.functionName =
+        stackFrame.functionName === undefined ? null : stackFrame.functionName;
+      hookSource.fileName =
+        stackFrame.fileName === undefined ? null : stackFrame.fileName;
+      hookSource.columnNumber =
+        stackFrame.columnNumber === undefined ? null : stackFrame.columnNumber;
     }
 
     levelChild.hookSource = hookSource;
@@ -1216,7 +1222,10 @@ export function inspectHooks<Props>(
     // $FlowFixMe[incompatible-use] found when upgrading Flow
     currentDispatcher.H = previousDispatcher;
   }
-  const rootStack = ErrorStackParser.parse(ancestorStackError);
+  const rootStack =
+    ancestorStackError === undefined
+      ? ([]: ParsedStackFrame[])
+      : ErrorStackParser.parse(ancestorStackError);
   return buildTree(rootStack, readHookLog);
 }
 
@@ -1264,7 +1273,10 @@ function inspectHooksOfForwardRef<Props, Ref>(
     hookLog = [];
     currentDispatcher.H = previousDispatcher;
   }
-  const rootStack = ErrorStackParser.parse(ancestorStackError);
+  const rootStack =
+    ancestorStackError === undefined
+      ? ([]: ParsedStackFrame[])
+      : ErrorStackParser.parse(ancestorStackError);
   return buildTree(rootStack, readHookLog);
 }
 
@@ -1310,6 +1322,14 @@ export function inspectHooksOfFiber(
   // current state from them.
   currentHook = (fiber.memoizedState: Hook);
   currentFiber = fiber;
+  const thenableState =
+    fiber.dependencies && fiber.dependencies._debugThenableState;
+  // In DEV the thenableState is an inner object.
+  const usedThenables: any = thenableState
+    ? thenableState.thenables || thenableState
+    : null;
+  currentThenableState = Array.isArray(usedThenables) ? usedThenables : null;
+  currentThenableIndex = 0;
 
   if (hasOwnProperty.call(currentFiber, 'dependencies')) {
     // $FlowFixMe[incompatible-use]: Flow thinks hasOwnProperty might have nulled `currentFiber`
@@ -1364,6 +1384,8 @@ export function inspectHooksOfFiber(
     currentFiber = null;
     currentHook = null;
     currentContextDependency = null;
+    currentThenableState = null;
+    currentThenableIndex = 0;
 
     restoreContexts(contextMap);
   }

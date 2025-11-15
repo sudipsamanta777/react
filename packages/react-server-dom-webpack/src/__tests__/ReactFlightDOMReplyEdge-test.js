@@ -10,19 +10,7 @@
 
 'use strict';
 
-// Polyfills for test environment
-global.ReadableStream =
-  require('web-streams-polyfill/ponyfill/es6').ReadableStream;
-global.TextEncoder = require('util').TextEncoder;
-global.TextDecoder = require('util').TextDecoder;
-
-global.Blob = require('buffer').Blob;
-if (typeof File === 'undefined' || typeof FormData === 'undefined') {
-  global.File = require('buffer').File || require('undici').File;
-  global.FormData = require('undici').FormData;
-}
-
-// let serverExports;
+let serverExports;
 let webpackServerMap;
 let ReactServerDOMServer;
 let ReactServerDOMClient;
@@ -36,7 +24,7 @@ describe('ReactFlightDOMReplyEdge', () => {
       require('react-server-dom-webpack/server.edge'),
     );
     const WebpackMock = require('./utils/WebpackMock');
-    // serverExports = WebpackMock.serverExports;
+    serverExports = WebpackMock.serverExports;
     webpackServerMap = WebpackMock.webpackServerMap;
     ReactServerDOMServer = require('react-server-dom-webpack/server.edge');
     jest.resetModules();
@@ -194,23 +182,32 @@ describe('ReactFlightDOMReplyEdge', () => {
   });
 
   it('should support BYOB binary ReadableStreams', async () => {
-    const buffer = new Uint8Array([
+    const sourceBytes = [
       123, 4, 10, 5, 100, 255, 244, 45, 56, 67, 43, 124, 67, 89, 100, 20,
-    ]).buffer;
-    const buffers = [
-      new Int8Array(buffer, 1),
-      new Uint8Array(buffer, 2),
-      new Uint8ClampedArray(buffer, 2),
-      new Int16Array(buffer, 2),
-      new Uint16Array(buffer, 2),
-      new Int32Array(buffer, 4),
-      new Uint32Array(buffer, 4),
-      new Float32Array(buffer, 4),
-      new Float64Array(buffer, 0),
-      new BigInt64Array(buffer, 0),
-      new BigUint64Array(buffer, 0),
-      new DataView(buffer, 3),
     ];
+
+    // Create separate buffers for each typed array to avoid ArrayBuffer
+    // transfer issues. Each view needs its own buffer because enqueue()
+    // transfers ownership.
+    const buffers = [
+      new Int8Array(sourceBytes.slice(1)),
+      new Uint8Array(sourceBytes.slice(2)),
+      new Uint8ClampedArray(sourceBytes.slice(2)),
+      new Int16Array(new Uint8Array(sourceBytes.slice(2)).buffer),
+      new Uint16Array(new Uint8Array(sourceBytes.slice(2)).buffer),
+      new Int32Array(new Uint8Array(sourceBytes.slice(4)).buffer),
+      new Uint32Array(new Uint8Array(sourceBytes.slice(4)).buffer),
+      new Float32Array(new Uint8Array(sourceBytes.slice(4)).buffer),
+      new Float64Array(new Uint8Array(sourceBytes.slice(0)).buffer),
+      new BigInt64Array(new Uint8Array(sourceBytes.slice(0)).buffer),
+      new BigUint64Array(new Uint8Array(sourceBytes.slice(0)).buffer),
+      new DataView(new Uint8Array(sourceBytes.slice(3)).buffer),
+    ];
+
+    // Save expected bytes before enqueueing (which will detach the buffers).
+    const expectedBytes = buffers.flatMap(c =>
+      Array.from(new Uint8Array(c.buffer, c.byteOffset, c.byteLength)),
+    );
 
     // This a binary stream where each chunk ends up as Uint8Array.
     const s = new ReadableStream({
@@ -239,11 +236,7 @@ describe('ReactFlightDOMReplyEdge', () => {
 
     // The streamed buffers might be in different chunks and in Uint8Array form but
     // the concatenated bytes should be the same.
-    expect(streamedBuffers.flatMap(t => Array.from(t))).toEqual(
-      buffers.flatMap(c =>
-        Array.from(new Uint8Array(c.buffer, c.byteOffset, c.byteLength)),
-      ),
-    );
+    expect(streamedBuffers.flatMap(t => Array.from(t))).toEqual(expectedBytes);
   });
 
   it('should abort when parsing an incomplete payload', async () => {
@@ -307,5 +300,30 @@ describe('ReactFlightDOMReplyEdge', () => {
 
     expect(await decoded.a).toBe('hello');
     expect(Array.from(await decoded.b)).toEqual(Array.from(buffer));
+  });
+
+  it('can pass a registered server reference', async () => {
+    function greet(name) {
+      return 'hi, ' + name;
+    }
+    const ServerModule = serverExports({
+      greet,
+    });
+
+    ReactServerDOMClient.registerServerReference(
+      ServerModule.greet,
+      ServerModule.greet.$$id,
+    );
+
+    const body = await ReactServerDOMClient.encodeReply({
+      method: ServerModule.greet,
+      boundMethod: ServerModule.greet.bind(null, 'there'),
+    });
+    const replyResult = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+    expect(replyResult.method).toBe(greet);
+    expect(replyResult.boundMethod()).toBe('hi, there');
   });
 });
